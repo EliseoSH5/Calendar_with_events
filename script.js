@@ -1,6 +1,13 @@
-// =========================
-// Responsive Calendar - script.js (edición + colores por urgencia)
-// =========================
+// ======================================================
+// Responsive Calendar - script.js (Firestore + tiempo real)
+// ======================================================
+
+// ---------- Comprobación mínima de la API remota ----------
+if (!window.$eventsAPI) {
+  console.error(
+    "[Calendario] No se encontró window.$eventsAPI. Asegúrate de haber añadido el bloque de Firebase en index.html antes de cargar script.js."
+  );
+}
 
 // ---------- Selectores base ----------
 const daysContainer     = document.querySelector(".days");
@@ -37,21 +44,20 @@ const monthsES = [
 ];
 const weekdaysShortES = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
-// ---------- Estado ----------
+// ---------- Estado de calendario ----------
 let today = new Date();
 let month = today.getMonth();
 let year  = today.getFullYear();
 let activeDay = today.getDate();
 
-const LS_KEY = "events";
-
-// Estructura por evento:
-// { title, from, location, company, staff, well, tool, urgency, status, notes }
-let eventsArr = loadEvents();
-
 // Estado de edición
 let isEditing = false;
-let editRef = null; // { day, month, year, originalTitle, originalFrom }
+let editRef = null; // { id } del evento que estamos editando
+
+// Suscripción en vivo al día activo
+let liveUnsub = null;
+// Caché de eventos del día activo (para validaciones de duplicados)
+let currentDayEvents = [];
 
 // ---------- Utilidades de tiempo ----------
 function hmToMinutes(hhmm) {
@@ -74,96 +80,14 @@ function toHHMM(mins) {
   return `${pad2(h)}:${pad2(m)}`;
 }
 
-// Normaliza la urgencia a 'roja' | 'media' | 'baja' (para estilos)
+// ---------- Normalización de urgencia ----------
 function normalizeUrgency(u) {
-  const s = String(u || "").trim().toLowerCase();
-  if (["alta", "roja", "urgente"].includes(s)) return "roja";
-  if (["media", "medio"].includes(s)) return "media";
-  if (["baja", "low"].includes(s)) return "baja";
-  return "";
-}
-
-// ---------- Persistencia + migración ----------
-function saveEvents() {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(eventsArr));
-  } catch (e) {
-    console.error("No se pudo guardar en localStorage:", e);
-  }
-}
-
-function migrateOldFormat(arr) {
-  // Migra formatos antiguos hacia { from } + metadatos actuales
-  const toMinFrom12h = (t) => {
-    const parts = String(t).trim().split(" ");
-    if (parts.length !== 2) return NaN;
-    const [hh, mm] = parts[0].split(":").map(Number);
-    let H = hh;
-    const suf = parts[1].toUpperCase();
-    if (isNaN(H) || isNaN(mm)) return NaN;
-    if (suf === "PM" && H !== 12) H += 12;
-    if (suf === "AM" && H === 12) H = 0;
-    return H * 60 + mm;
-  };
-
-  let migrated = false;
-
-  arr.forEach((d) => {
-    if (!Array.isArray(d.events)) return;
-    d.events = d.events.map((ev) => {
-      const out = { ...ev };
-
-      // 'time' -> usa solo el inicio
-      if (typeof out.from !== "number") {
-        if (typeof out.time === "string") {
-          const [a] = out.time.split("-").map((s) => s.trim());
-          let fromM = toMinFrom12h(a);
-          if (isNaN(fromM)) fromM = hmToMinutes(a);
-          out.from = !isNaN(fromM) ? fromM : 0;
-          delete out.time;
-          migrated = true;
-        } else if (typeof out.to === "number" || typeof out.from === "number") {
-          out.from = typeof out.from === "number" ? out.from : 0;
-          migrated = true;
-        } else {
-          out.from = 0;
-          migrated = true;
-        }
-      }
-      if (typeof out.to !== "undefined") { delete out.to; migrated = true; }
-
-      // Metadatos por defecto
-      out.location = out.location ?? "";
-      out.company  = out.company  ?? "";
-      out.staff    = out.staff    ?? "";
-      out.well     = out.well     ?? "";
-      out.tool     = out.tool     ?? "";
-      out.urgency  = out.urgency  ?? "";
-      out.status   = out.status   ?? "";
-      out.notes    = out.notes    ?? "";
-
-      // Limpieza de campos en desuso
-      if ("category" in out){ delete out.category; migrated = true; }
-      if ("shift" in out){ delete out.shift; migrated = true; }
-
-      return out;
-    });
-  });
-
-  if (migrated) saveEvents();
-  return arr;
-}
-
-function loadEvents() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return migrateOldFormat(arr);
-  } catch {
-    return [];
-  }
+  if (!u) return "";
+  const s = String(u).trim().toLowerCase();
+  if (["roja","alta","red"].includes(s)) return "roja";
+  if (["media","amarilla","yellow"].includes(s)) return "media";
+  if (["baja","verde","low"].includes(s)) return "baja";
+  return s; // si ya viene "roja/media/baja" o un valor libre
 }
 
 // ---------- Cálculos de calendario ----------
@@ -173,12 +97,9 @@ function isToday(y, m, d) {
   const t = new Date();
   return y === t.getFullYear() && m === t.getMonth() && d === t.getDate();
 }
-function hasEvents(y, m, d) {
-  return eventsArr.some((e) => e.year === y && e.month === m + 1 && e.day === d && e.events?.length);
-}
 
 // ---------- Render principal ----------
-function initCalendar() {
+async function initCalendar() {
   daysContainer.innerHTML = "";
 
   const firstDay = getFirstDayOfMonth(year, month);
@@ -217,7 +138,6 @@ function initCalendar() {
 
     if (isToday(year, month, d)) cell.classList.add("today");
     if (d === activeDay) cell.classList.add("active");
-    if (hasEvents(year, month, d)) cell.classList.add("event");
 
     cell.addEventListener("click", () => setActiveDay(d));
     cell.addEventListener("keydown", (ev) => {
@@ -237,7 +157,35 @@ function initCalendar() {
     daysContainer.appendChild(cell);
   }
 
+  // Marcar días con eventos (consulta simple por día)
+  markDaysWithEvents(year, month);
+
+  // Cargar/suscribirse a eventos del día activo
   updateEvents(activeDay);
+}
+
+// Marca con un punto los días que tienen eventos (realiza hasta 31 lecturas)
+async function markDaysWithEvents(y, m) {
+  const totalDays = getDaysInMonth(y, m);
+  const dayNodes = [...daysContainer.querySelectorAll(".day")].filter(
+    (el) => !el.classList.contains("prev-date") && !el.classList.contains("next-date")
+  );
+
+  // Limpia marcas previas
+  dayNodes.forEach((node) => node.classList.remove("event"));
+
+  // Lee día por día (suficiente para apps pequeñas)
+  for (let d = 1; d <= totalDays; d++) {
+    try {
+      const events = await window.$eventsAPI.listEventsByDay(y, m + 1, d);
+      if (events && events.length) {
+        const node = dayNodes[d - 1];
+        node?.classList.add("event");
+      }
+    } catch (e) {
+      console.warn("No se pudo marcar eventos para el día", d, e);
+    }
+  }
 }
 
 // ---------- Selección de día ----------
@@ -267,19 +215,46 @@ function renderMetaItem(label, value) {
   return row;
 }
 
-// ---------- Panel de eventos ----------
+// ---------- Suscripción/render de eventos ----------
 function updateEvents(dayNumber) {
   eventsContainer.innerHTML = "";
 
-  let events = [];
-  for (const e of eventsArr) {
-    if (e.year === year && e.month === month + 1 && e.day === dayNumber) {
-      events = Array.isArray(e.events) ? e.events.slice() : [];
-      break;
-    }
-  }
+  // Cancela suscripción previa
+  if (liveUnsub) { try { liveUnsub(); } catch {} liveUnsub = null; }
 
-  if (events.length === 0) {
+  // Suscríbete en tiempo real al día activo
+  liveUnsub = window.$eventsAPI.watchDay(year, month + 1, dayNumber, (events) => {
+    // Normaliza y ordena
+    currentDayEvents = (events || []).map((ev) => ({
+      id: ev.id,
+      y: ev.y, m: ev.m, d: ev.d,
+      title: ev.title || "",
+      from: typeof ev.from === "number" ? ev.from : 0,
+      location: ev.location || "",
+      company:  ev.company  || "",
+      staff:    ev.staff    || "",
+      well:     ev.well     || "",
+      tool:     ev.tool     || "",
+      urgency:  normalizeUrgency(ev.urgency || ""),
+      status:   ev.status   || "",
+      notes:    ev.notes    || "",
+    })).sort((a, b) => a.from - b.from);
+
+    renderEventsList(currentDayEvents);
+
+    // Asegura que el día activo esté marcado como que tiene eventos o no
+    const activeEl = document.querySelector(".day.active");
+    if (activeEl) {
+      if (currentDayEvents.length) activeEl.classList.add("event");
+      else activeEl.classList.remove("event");
+    }
+  });
+}
+
+function renderEventsList(events) {
+  eventsContainer.innerHTML = "";
+
+  if (!events.length) {
     const noEv = document.createElement("div");
     noEv.className = "no-event";
     const h3 = document.createElement("h3");
@@ -289,12 +264,11 @@ function updateEvents(dayNumber) {
     return;
   }
 
-  // Ordenar por hora de inicio
-  events.sort((a, b) => a.from - b.from);
-
   events.forEach((ev) => {
     const card = document.createElement("div");
     card.className = "event";
+    if (ev.status)  card.dataset.status  = ev.status;
+    if (ev.urgency) card.dataset.urgency = ev.urgency;
 
     // Cabecera (título + hora)
     const left = document.createElement("div");
@@ -314,13 +288,13 @@ function updateEvents(dayNumber) {
     span.textContent = `Inicio: ${minutesTo12h(ev.from)}`;
     right.appendChild(span);
 
-    // Botones acción
+    // Acciones
     const actions = document.createElement("div");
     actions.style.display = "flex";
     actions.style.gap = "8px";
     actions.style.marginTop = "10px";
 
-    // Detalles (plegable)
+    // Detalles (toggle)
     const detailsBtn = document.createElement("button");
     detailsBtn.className = "event-details-btn";
     detailsBtn.setAttribute("aria-expanded", "false");
@@ -359,7 +333,7 @@ function updateEvents(dayNumber) {
 
     // Botón Editar
     const editBtn = document.createElement("button");
-    editBtn.className = "event-details-btn"; // reutiliza estilo
+    editBtn.className = "event-details-btn";
     editBtn.textContent = "Editar";
     editBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -385,11 +359,6 @@ function updateEvents(dayNumber) {
     card.appendChild(actions);
     card.appendChild(details);
 
-    // data-attrs para estilos condicionales
-    if (ev.status)  card.dataset.status  = ev.status;
-    const normUrg = normalizeUrgency(ev.urgency);
-    if (normUrg)   card.dataset.urgency = normUrg;
-
     eventsContainer.appendChild(card);
   });
 }
@@ -400,12 +369,12 @@ function confirmAndDelete(ev) {
   const hora  = minutesTo12h(ev.from);
   const msg = `¿Eliminar el evento:\n\n“${ev.title}”\n${fecha} · ${hora}\n\nEsta acción no se puede deshacer.`;
   if (confirm(msg)) {
-    deleteEvent(ev.title, ev.from);
+    deleteEvent(ev.id);
   }
 }
 
-// ---------- Crear / Editar / Eliminar ----------
-function addOrUpdateEvent() {
+// ---------- Crear / Editar / Eliminar (Firestore) ----------
+async function addOrUpdateEvent() {
   const title = (addEventTitle?.value || "").trim();
   const fromStr  = (addEventFrom?.value || "").trim(); // "HH:MM" 24h
 
@@ -420,100 +389,65 @@ function addOrUpdateEvent() {
     return;
   }
 
-  // Metadatos (guardamos texto tal cual; el color se maneja con data-attrs normalizados)
-  const meta = {
+  const payload = {
+    y: year, m: month + 1, d: activeDay,
+    title,
+    from: fromM,
     location: (addEventLocation?.value || "").trim(),
     company : (addEventCompany?.value  || "").trim(),
     staff   : (addEventStaff?.value    || "").trim(),
     well    : (addEventWell?.value     || "").trim(),
     tool    : (addEventTool?.value     || "").trim(),
-    urgency : (addEventUrgency?.value  || "").trim(),
+    urgency : normalizeUrgency((addEventUrgency?.value  || "").trim()),
     status  : (addEventStatus?.value   || "").trim(),
     notes   : (addEventNotes?.value    || "").trim(),
   };
 
-  // Localiza el día
-  let dayEntry = eventsArr.find((e) => e.year === year && e.month === month + 1 && e.day === activeDay);
-  if (!dayEntry) {
-    dayEntry = { day: activeDay, month: month + 1, year, events: [] };
-    eventsArr.push(dayEntry);
+  // Validar duplicado (mismo título + misma hora en el día activo)
+  const duplicate = currentDayEvents.some((ev) => {
+    if (isEditing && editRef?.id === ev.id) return false; // ignora el mismo
+    return ev.title === payload.title && ev.from === payload.from;
+  });
+  if (duplicate) {
+    alert("Ya existe un evento con ese Título y esa Hora de inicio.");
+    return;
   }
 
-  if (!isEditing) {
-    // --- Crear ---
-    const duplicate = dayEntry.events.some((ev) => ev.title === title && ev.from === fromM);
-    if (duplicate) {
-      alert("Ese evento ya existe a esa hora");
-      return;
+  try {
+    if (!isEditing) {
+      await window.$eventsAPI.createEvent(payload);
+    } else {
+      await window.$eventsAPI.updateEvent(editRef.id, payload);
     }
-    dayEntry.events.push({ title, from: fromM, ...meta });
-  } else {
-    // --- Editar ---
-    const { originalTitle, originalFrom } = editRef || {};
-    const idx = dayEntry.events.findIndex((ev) => ev.title === originalTitle && ev.from === originalFrom);
-    if (idx === -1) {
-      alert("No se encontró el evento a editar.");
-      resetModalMode();
-      updateEvents(activeDay);
-      return;
-    }
-    const conflict = dayEntry.events.some((ev, i) => i !== idx && ev.title === title && ev.from === fromM);
-    if (conflict) {
-      alert("Ya existe otro evento con el mismo Título y Hora de inicio.");
-      return;
-    }
-    dayEntry.events[idx] = { title, from: fromM, ...meta };
+    closeAddEventModal();
+    clearModalFields();
+    resetModalMode();
+  } catch (e) {
+    console.error("Error al guardar evento:", e);
+    alert("Ocurrió un error al guardar el evento.");
   }
-
-  saveEvents();
-
-  // Cierre/limpieza
-  closeAddEventModal();
-  clearModalFields();
-  resetModalMode();
-
-  // Marca día y refresca
-  const activeEl = document.querySelector(".day.active");
-  if (activeEl && !activeEl.classList.contains("event")) activeEl.classList.add("event");
-  updateEvents(activeDay);
 }
 
-function deleteEvent(title, fromM) {
-  const idxDay = eventsArr.findIndex((e) => e.year === year && e.month === month + 1 && e.day === activeDay);
-  if (idxDay === -1) return;
-
-  const beforeLen = eventsArr[idxDay].events.length;
-  eventsArr[idxDay].events = eventsArr[idxDay].events.filter((ev) => !(ev.title === title && ev.from === fromM));
-
-  if (eventsArr[idxDay].events.length === 0) {
-    eventsArr.splice(idxDay, 1);
-    const activeEl = document.querySelector(".day.active");
-    if (activeEl?.classList.contains("event")) activeEl.classList.remove("event");
+async function deleteEvent(id) {
+  try {
+    await window.$eventsAPI.removeEvent(id);
+  } catch (e) {
+    console.error("Error al eliminar evento:", e);
+    alert("No se pudo eliminar el evento.");
   }
-
-  if (eventsArr[idxDay]?.events.length !== beforeLen) saveEvents();
-
-  updateEvents(activeDay);
 }
 
 // ---------- Modo edición ----------
 function openEditEvent(ev) {
   isEditing = true;
-  editRef = {
-    day: activeDay,
-    month: month + 1,
-    year,
-    originalTitle: ev.title,
-    originalFrom: ev.from,
-  };
+  editRef = { id: ev.id };
 
-  // Cambia textos del modal
   if (addEventHeaderH3) addEventHeaderH3.textContent = "Editar evento";
   if (addEventSubmit) addEventSubmit.textContent = "Guardar cambios";
 
   // Prellenar campos
-  if (addEventTitle) addEventTitle.value = ev.title;
-  if (addEventFrom)  addEventFrom.value  = toHHMM(ev.from);
+  if (addEventTitle) addEventTitle.value = ev.title || "";
+  if (addEventFrom)  addEventFrom.value  = toHHMM(ev.from || 0);
 
   if (addEventLocation) addEventLocation.value = ev.location || "";
   if (addEventCompany)  addEventCompany.value  = ev.company  || "";
@@ -593,7 +527,6 @@ function openAddEventModal() {
 }
 function closeAddEventModal() {
   addEventWrapper?.classList.remove("active");
-  // Si se estaba editando y cierras, resetea el modo
   if (isEditing) resetModalMode();
 
   if (modalPreviousFocus && typeof modalPreviousFocus.focus === "function") {
@@ -648,7 +581,7 @@ todayBtn?.addEventListener("click", goToday);
 gotoBtn?.addEventListener("click", gotoDate);
 
 addEventBtn?.addEventListener("click", () => {
-  resetModalMode();     // entra en modo "Agregar"
+  resetModalMode();
   clearModalFields();
   openAddEventModal();
 });
@@ -661,7 +594,6 @@ dateInput?.addEventListener("input", (e) => {
   if (v.length === 2 && !v.includes("/")) e.target.value = v + "/";
 });
 
-// Guardar (crea o edita según estado)
 addEventSubmit?.addEventListener("click", addOrUpdateEvent);
 
 makeKeyboardClickable(prevBtn, "Mes anterior");
