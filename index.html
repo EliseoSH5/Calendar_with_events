@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calendario Responsive con Eventos</title>
+
+  <!-- Iconos (puntos del calendario, etc.) -->
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+        integrity="sha512-MW6bT4fXk3Jgqk6FfGm8kqg8k8wqC0k1H8U4iD9F8qP5t3ZQhE3z4zqXhG0r1qg7z9kQwWJqD2J3K1Z0Q6QQ3A=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- Tu CSS principal -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+
+    <!-- Panel izquierdo: Calendario -->
+    <div class="left">
+      <div class="calendar" tabindex="-1">
+        <!-- Encabezado navegación -->
+        <div class="month">
+          <i class="fas fa-angle-left prev" aria-label="Mes anterior" role="button" tabindex="0"></i>
+          <div class="date" aria-live="polite">Octubre 2025</div>
+          <i class="fas fa-angle-right next" aria-label="Mes siguiente" role="button" tabindex="0"></i>
+        </div>
+
+        <!-- Barra de utilidades -->
+        <div class="weekdays"></div>
+        <div class="days" aria-label="Días del mes"></div>
+
+        <div class="goto-today">
+          <div class="goto">
+            <input type="text" class="date-input" placeholder="mm/yyyy" inputmode="numeric" aria-label="Ir a fecha (mm/yyyy)" />
+            <button class="goto-btn" type="button">Ir</button>
+          </div>
+          <button class="today-btn" type="button">Hoy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel derecho: Lista de eventos del día -->
+    <div class="right">
+      <div class="today-date">
+        <div class="event-day" aria-live="polite"></div>
+        <div class="event-date" aria-live="polite"></div>
+      </div>
+
+      <div class="events" aria-label="Eventos del día">
+        <!-- Se rellena dinámicamente desde script.js -->
+        <!-- Ejemplo vacío:
+        <div class="no-event"><h3>Sin eventos</h3></div>
+        -->
+      </div>
+
+      <!-- Botón flotante para abrir modal -->
+      <div class="add-event-footer">
+        <button class="add-event" type="button" aria-haspopup="dialog" aria-controls="addEventDialog">
+          <i class="fa fa-plus"></i> Agregar evento
+        </button>
+      </div>
+    </div>
+  </div>
+
+<!-- Modal Agregar Evento -->
+<div class="add-event-wrapper" id="addEventDialog" aria-hidden="true">
+  <div class="add-event" role="dialog" aria-modal="true" aria-labelledby="addEventTitle">
+    <div class="add-event-header">
+      <h3 id="addEventTitle">Agregar evento</h3>
+      <button class="close" aria-label="Cerrar modal" type="button">&times;</button>
+    </div>
+
+    <div class="add-event-form">
+      <!-- Básico -->
+      <div class="form-row">
+        <label for="evName">Título *</label>
+        <input id="evName" class="event-name" type="text" placeholder="Ej. Reunión de avance" required />
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label for="evFrom">Hora de inicio *</label>
+          <input id="evFrom" class="event-time-from" type="time" required />
+        </div>
+      </div>
+
+      <!-- Clasificación (sin 'Horario', sin 'Categoría') -->
+      <div class="form-row two">
+        <div>
+          <label for="evUrgency">Urgencia</label>
+          <select id="evUrgency" class="event-urgency">
+            <option value="">— Selecciona —</option>
+            <option>Alta</option>
+            <option>Media</option>
+            <option>Baja</option>
+          </select>
+        </div>
+        <div>
+          <label for="evStatus">Estado</label>
+          <select id="evStatus" class="event-status">
+            <option value="">— Selecciona —</option>
+            <option>Planificado</option>
+            <option>En curso</option>
+            <option>Completado</option>
+            <option>Cancelado</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Contexto -->
+      <div class="form-row two">
+        <div>
+          <label for="evWell">Pozo</label>
+          <input id="evWell" class="event-well" type="text" placeholder="Ej. Mulach-32" />
+        </div>
+        <div>
+          <label for="evTool">Herramienta</label>
+          <input id="evTool" class="event-tool" type="text" placeholder="Ej. PDC BT616SM" />
+        </div>
+      </div>
+
+      <div class="form-row two">
+        <div>
+          <label for="evCompany">Compañía</label>
+          <input id="evCompany" class="event-company" list="companyList" type="text" placeholder="Ej. OPEX / SLB / BHGE" />
+          <datalist id="companyList">
+            <option value="OPEX Perforadora"></option>
+            <option value="SLB (Schlumberger)"></option>
+            <option value="Baker Hughes"></option>
+            <option value="Halliburton"></option>
+            <option value="Weatherford"></option>
+            <option value="Taurex"></option>
+          </datalist>
+        </div>
+        <div>
+          <label for="evLocation">Ubicación</label>
+          <input id="evLocation" class="event-location" type="text" placeholder="Ej. Plataforma / Sala A" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="evStaff">Personal asignado</label>
+        <input id="evStaff" class="event-staff" type="text" placeholder="Ej. ESM, SME, DD, MWD..." />
+      </div>
+
+      <div class="form-row">
+        <label for="evNotes">Notas</label>
+        <textarea id="evNotes" class="event-notes" rows="3" placeholder="Indicaciones, riesgos, checklists, etc."></textarea>
+      </div>
+    </div>
+
+    <div class="add-event-footer">
+      <button class="add-event-btn" type="button">Guardar evento</button>
+    </div>
+  </div>
+</div>
+
+
+  <!-- JS principal (el refactor que ya te di) -->
+  <script src="script.js"></script>
+</body>
+</html>

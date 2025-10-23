@@ -1,0 +1,421 @@
+/* =========================
+   Responsive Calendar - style.css (con scroll interno en panel derecho)
+   ========================= */
+
+/* --------- Variables --------- */
+:root{
+  --bg: #f7f8fb;
+  --panel: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --primary: #4f46e5;       /* indigo */
+  --primary-600:#4338ca;
+  --border:#e5e7eb;
+  --chip:#eef2ff;
+  --success:#16a34a;
+  --danger:#dc2626;
+  --warning:#f59e0b;
+  --shadow: 0 10px 30px rgba(0,0,0,.08);
+
+  /* Alto objetivo del panel derecho (ajústalo a gusto) */
+  --right-panel-height: min(78vh, 760px);
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1220;
+    --panel:#1b2130;
+    --text:#e7ecf5;
+    --muted:#9aa3b2;
+    --primary:#6366f1;
+    --primary-600:#5459ee;
+    --border:#2e3648;
+    --chip:#202744;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+
+/* --------- Reset mínimo --------- */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+  background:var(--bg); color:var(--text);
+}
+
+/* --------- Layout contenedor --------- */
+.container{
+  max-width: 1100px;
+  margin: 24px auto;
+  padding: 0 16px;
+  display: grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap: 22px;
+}
+
+.left,.right{
+  background: var(--panel);
+  border:1px solid var(--border);
+  border-radius:16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* --------- Calendario (panel izquierdo) --------- */
+.calendar{
+  padding: 18px;
+  outline: none;
+}
+
+.month{
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom: 12px;
+}
+
+.month .date{
+  font-weight: 800; letter-spacing:.2px;
+}
+
+.month i{
+  font-size: 20px; line-height:1;
+  padding: 6px 10px; border-radius:10px; cursor:pointer;
+  color: var(--text);
+  transition: background .15s ease, transform .05s ease;
+}
+.month i:hover{ background: rgba(0,0,0,.06); }
+.month i:active{ transform: translateY(1px); }
+
+.weekdays{
+  display:grid; grid-template-columns: repeat(7,1fr);
+  gap: 8px; margin-top: 8px; margin-bottom: 8px;
+  color: var(--muted); font-weight:600; font-size:.86rem;
+}
+.weekdays > div{
+  text-align:center; padding:6px 0;
+}
+
+.days{
+  display:grid; grid-template-columns: repeat(7,1fr);
+  gap: 8px;
+}
+
+.day{
+  background: transparent;
+  border:1px solid var(--border);
+  border-radius: 12px;
+  min-height: 72px;
+  display:flex; align-items:flex-start; justify-content:flex-end;
+  padding: 8px;
+  position: relative;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease, transform .05s ease;
+}
+.day:hover{ border-color: var(--primary); background: rgba(79,70,229,.06); }
+.day:active{ transform: translateY(1px); }
+
+.day > span{ font-weight:700; }
+
+.prev-date,.next-date{
+  color: var(--muted);
+  opacity:.55;
+  cursor: default;
+}
+.prev-date:hover,.next-date:hover{ background: transparent; border-color: var(--border); }
+
+.today{
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.active{
+  background: var(--chip);
+  border-color: var(--primary);
+}
+
+.day.event::after{
+  content:"";
+  position:absolute; left:50%; bottom:6px; transform:translateX(-50%);
+  width:6px; height:6px; border-radius:50%;
+  background: var(--primary);
+}
+
+/* Goto / Today */
+.goto-today{
+  display:flex; align-items:center; justify-content:space-between;
+  gap:12px; margin-top:16px;
+}
+.goto{ display:flex; gap:8px; align-items:center; }
+.date-input{
+  width:120px; padding:8px 10px; border:1px solid var(--border); border-radius:10px;
+  background: var(--panel); color:var(--text);
+}
+.goto-btn,.today-btn{
+  border:none; background: var(--primary); color:#fff; border-radius:10px;
+  padding:8px 12px; font-weight:700; cursor:pointer;
+  transition: background .15s ease, transform .05s ease, box-shadow .15s ease;
+  box-shadow: 0 6px 16px rgba(79,70,229,.25);
+}
+.goto-btn:hover,.today-btn:hover{ background: var(--primary-600); }
+.goto-btn:active,.today-btn:active{ transform: translateY(1px); }
+
+/* --------- Panel derecho (eventos) --------- */
+.right{
+  padding: 18px;
+  display:flex;
+  flex-direction:column;
+
+  /* === Cambio clave: el panel NO crece, tiene altura fija y scroll interno en su lista === */
+  height: var(--right-panel-height);
+  overflow: hidden;      /* evita crecimiento externo */
+}
+
+/* Encabezado fijo arriba del panel derecho */
+.today-date{
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap: 10px;
+}
+.event-day{ font-size:1.15rem; font-weight:800; }
+.event-date{ color:var(--muted); font-weight:600; }
+
+/* Lista de eventos con scroll interno */
+.events{
+  flex:1;
+  min-height: 0;         /* clave para que scroll funcione dentro de flex */
+  overflow: auto;
+  display: grid; gap: 10px;
+  padding: 6px 2px 8px 2px;
+  padding-right: 6px;    /* separa del scrollbar */
+}
+
+/* Cartas de evento */
+.event{
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(79,70,229,.06), transparent 28%);
+}
+.event .title{
+  display:flex; align-items:center; gap:8px;
+}
+.event .title i{ font-size:10px; }
+.event .event-title{ margin:0; font-size:1rem; font-weight:800; }
+.event .event-time{ color:var(--muted); font-weight:700; }
+
+.event .event-details-btn,
+.event .event-delete-btn{
+  margin-top:10px;
+  border:none; border-radius:10px; padding:8px 12px; cursor:pointer;
+  font-weight:700;
+}
+.event .event-details-btn{
+  background: var(--chip); color: var(--text);
+}
+.event .event-details-btn:hover{ filter: brightness(.98); }
+.event .event-delete-btn{
+  background: #fee2e2; color:#991b1b;
+}
+.event .event-delete-btn:hover{ background:#fecaca; }
+
+.event-details{
+  border-top:1px dashed var(--border);
+  margin-top:10px; padding-top:10px;
+  display:grid; gap:6px;
+}
+.event-meta-row{ display:flex; gap:6px; font-size:.95rem; }
+.event-notes-block{ margin-top:2px; }
+.event-notes-block p{ margin:.2rem 0 0 0; }
+
+/* Estados rápidos (opcional de estilos) */
+.event[data-status="Completado"]{ border-color: rgba(22,163,74,.4); }
+.event[data-urgency="Alta"]{ background: linear-gradient(180deg, rgba(220,38,38,.08), transparent 28%); }
+
+/* Vacío */
+.no-event{
+  border:1px dashed var(--border);
+  border-radius:14px;
+  padding: 16px;
+  text-align:center;
+  color: var(--muted);
+}
+
+/* Footer fijo abajo del panel derecho (botón Agregar) */
+.add-event-footer{
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, var(--panel) 75%, transparent);
+  padding-top: 10px;
+  z-index: 1;
+
+  display:flex; justify-content:flex-end;
+}
+.add-event{
+  background: var(--primary); color:#fff; border:none; border-radius:12px;
+  padding:10px 14px; font-weight:800; cursor:pointer;
+  display:inline-flex; align-items:center; gap:8px;
+  box-shadow: 0 10px 22px rgba(79,70,229,.3);
+  transition: background .15s ease, transform .05s ease;
+}
+.add-event:hover{ background: var(--primary-600); }
+.add-event:active{ transform: translateY(1px); }
+
+/* --------- Modal Agregar Evento --------- */
+.add-event-wrapper{
+  position: fixed; inset:0;
+  background: rgba(0,0,0,.45);
+  display:none;
+  align-items:center; justify-content:center;
+  padding: 16px; z-index: 1000;
+}
+.add-event-wrapper.active{ display:flex; }
+
+.add-event[role="dialog"]{
+  width: 100%; max-width: 760px;
+  background: var(--panel);
+  border:1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+
+.add-event-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 14px 16px;
+  border-bottom:1px solid var(--border);
+}
+.add-event-header h3{ margin:0; font-size:1.05rem; font-weight:800; }
+.add-event-header .close{
+  background: transparent; border:none; color:var(--text);
+  font-size:1.6rem; line-height:1; cursor:pointer; padding:4px 8px; border-radius:10px;
+}
+.add-event-header .close:hover{ background: rgba(0,0,0,.08); }
+
+.add-event-form{
+  padding: 14px 16px 6px;
+  display:grid; gap: 12px;
+}
+.form-row{ display:grid; gap:6px; }
+.form-row.two{ grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.add-event-form label{ font-size:.86rem; color: var(--muted); font-weight:700; }
+
+.add-event-form input,
+.add-event-form select,
+.add-event-form textarea{
+  width:100%;
+  padding:10px 12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  font-size:.98rem; color:var(--text);
+  background: var(--panel);
+  outline:none;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.add-event-form input:focus,
+.add-event-form select:focus,
+.add-event-form textarea:focus{
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 25%, transparent);
+}
+.add-event-form textarea{ resize: vertical; min-height: 88px; }
+
+/* Selects flecha */
+.add-event-form select{
+  appearance:none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #666 50%),
+    linear-gradient(135deg, #666 50%, transparent 50%),
+    linear-gradient(to right, var(--border), var(--border));
+  background-position:
+    calc(100% - 18px) calc(50% - 4px),
+    calc(100% - 12px) calc(50% - 4px),
+    calc(100% - 2.2rem) 50%;
+  background-size: 6px 6px, 6px 6px, 1px 1.6rem;
+  background-repeat:no-repeat;
+}
+
+/* Footer modal */
+.add-event-footer{
+  padding: 8px 16px 16px;
+  display:flex; justify-content:flex-end; gap:10px;
+}
+.add-event-btn{
+  background: var(--primary); color:#fff; border:none; border-radius:12px;
+  padding:10px 14px; font-weight:800; cursor:pointer;
+  transition: background .15s ease, transform .05s ease, box-shadow .15s ease;
+  box-shadow: 0 10px 22px rgba(79,70,229,.3);
+}
+.add-event-btn:hover{ background: var(--primary-600); }
+.add-event-btn:active{ transform: translateY(1px); }
+
+/* --------- Scrollbars suaves --------- */
+*{
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--primary) 40%, #aaa) transparent;
+}
+*::-webkit-scrollbar{ height:8px; width:8px; }
+*::-webkit-scrollbar-thumb{
+  background: color-mix(in oklab, var(--primary) 40%, #aaa);
+  border-radius: 20px;
+}
+*::-webkit-scrollbar-track{ background: transparent; }
+
+/* --------- Responsivo --------- */
+@media (max-width: 1000px){
+  .container{ grid-template-columns: 1fr; }
+}
+@media (max-width: 640px){
+  .form-row.two{ grid-template-columns:1fr; }
+  .days{ gap:6px; }
+  .day{ min-height: 64px; border-radius: 10px; }
+  .goto-today{ flex-direction:column; align-items:stretch; gap:8px; }
+  .goto{ justify-content:space-between; }
+  .date-input{ flex:1; }
+}
+
+/* Ajustes si el alto de ventana es pequeño */
+@media (max-height: 700px){
+  :root{ --right-panel-height: 70vh; }
+}
+@media (max-width: 640px){
+  :root{ --right-panel-height: 65vh; }
+}
+
+/* === Colores por urgencia (degradados) === */
+/* Urgencia Roja (o Alta normalizada a 'roja') */
+.event[data-urgency="roja"]{
+  background: linear-gradient(180deg, rgba(230,42,61,.15), transparent 28%);
+  border-color: rgba(230,42,61,.50);
+}
+
+/* Urgencia Media (amarillo) */
+.event[data-urgency="media"]{
+  background: linear-gradient(180deg, rgba(243, 132, 63, 0.15), transparent 28%);
+  border-color: rgba(243, 132, 63, 0.50);
+}
+
+/* Urgencia Baja (verde) */
+.event[data-urgency="baja"]{
+  background: linear-gradient(180deg, rgba(248,207,69,.15), transparent 28%);
+  border-color: rgba(248,207,69,.50);
+}
+
+/* === Estado Completado: AZUL sólido (sin degradado) === */
+.event[data-status="Completado"]{
+  background: linear-gradient(180deg, rgba(34,165,93,.15), transparent 28%);
+  border-color: rgba(34,165,93,.50);
+  /* Opcional: resaltar título y hora en azul/gris adecuados */
+  /* color general se mantiene; ajusta si quieres más contraste */
+}
+
+/* Si quieres asegurar que no quede ningún degradado anterior: */
+.event[data-status="Completado"]{
+  background-image: none !important;
+}
