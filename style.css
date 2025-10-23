@@ -390,19 +390,19 @@ body{
 
 /* === Colores por urgencia (degradados) === */
 /* Urgencia Roja (o Alta normalizada a 'roja') */
-.event[data-urgency="alta"]{
+.event[data-urgency="Alta"]{
   background: linear-gradient(180deg, rgba(230,42,61,.15), transparent 28%);
   border-color: rgba(230,42,61,.50);
 }
 
 /* Urgencia Media (amarillo) */
-.event[data-urgency="media"]{
+.event[data-urgency="Media"]{
   background: linear-gradient(180deg, rgba(243, 132, 63, 0.15), transparent 28%);
   border-color: rgba(243, 132, 63, 0.50);
 }
 
 /* Urgencia Baja (verde) */
-.event[data-urgency="baja"]{
+.event[data-urgency="Baja"]{
   background: linear-gradient(180deg, rgba(248,207,69,.15), transparent 28%);
   border-color: rgba(248,207,69,.50);
 }
