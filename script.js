@@ -1,13 +1,6 @@
-// ======================================================
-// Responsive Calendar - script.js (Firestore + tiempo real)
-// ======================================================
-
-// ---------- Comprobación mínima de la API remota ----------
-if (!window.$eventsAPI) {
-  console.error(
-    "[Calendario] No se encontró window.$eventsAPI. Asegúrate de haber añadido el bloque de Firebase en index.html antes de cargar script.js."
-  );
-}
+// =========================
+// Responsive Calendar - script.js (Firestore público, sin login)
+// =========================
 
 // ---------- Selectores base ----------
 const daysContainer     = document.querySelector(".days");
@@ -25,9 +18,9 @@ const addEventTitle     = document.querySelector(".event-name");
 const addEventFrom      = document.querySelector(".event-time-from");
 const addEventSubmit    = document.querySelector(".add-event-btn");
 const calendarBodyEl    = document.querySelector(".calendar");
-const addEventHeaderH3  = document.querySelector("#addEventTitle"); // título del modal
+const addEventHeaderH3  = document.querySelector("#addEventTitle");
 
-// ---------- Selectores de metadatos (opcionales) ----------
+// ---------- Metadatos ----------
 const addEventLocation  = document.querySelector(".event-location");
 const addEventCompany   = document.querySelector(".event-company");
 const addEventStaff     = document.querySelector(".event-staff");
@@ -44,22 +37,20 @@ const monthsES = [
 ];
 const weekdaysShortES = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
-// ---------- Estado de calendario ----------
+// ---------- Estado calendario ----------
 let today = new Date();
 let month = today.getMonth();
 let year  = today.getFullYear();
 let activeDay = today.getDate();
 
-// Estado de edición
+// ---------- Estado edición ----------
 let isEditing = false;
-let editRef = null; // { id } del evento que estamos editando
+let editRef = null; // { id, originalTitle, originalFrom }
 
-// Suscripción en vivo al día activo
+// Suscripción Firestore del día activo
 let liveUnsub = null;
-// Caché de eventos del día activo (para validaciones de duplicados)
-let currentDayEvents = [];
 
-// ---------- Utilidades de tiempo ----------
+// ---------- Utilidades ----------
 function hmToMinutes(hhmm) {
   if (!/^\d{1,2}:\d{2}$/.test(hhmm)) return NaN;
   const [h, m] = hhmm.split(":").map(Number);
@@ -79,18 +70,16 @@ function toHHMM(mins) {
   const m = mins % 60;
   return `${pad2(h)}:${pad2(m)}`;
 }
-
-// ---------- Normalización de urgencia ----------
 function normalizeUrgency(u) {
   if (!u) return "";
   const s = String(u).trim().toLowerCase();
   if (["roja","alta","red"].includes(s)) return "roja";
   if (["media","amarilla","yellow"].includes(s)) return "media";
   if (["baja","verde","low"].includes(s)) return "baja";
-  return s; // si ya viene "roja/media/baja" o un valor libre
+  return s;
 }
 
-// ---------- Cálculos de calendario ----------
+// ---------- Calendario ----------
 function getFirstDayOfMonth(y, m) { return new Date(y, m, 1).getDay(); }
 function getDaysInMonth(y, m)     { return new Date(y, m + 1, 0).getDate(); }
 function isToday(y, m, d) {
@@ -98,8 +87,8 @@ function isToday(y, m, d) {
   return y === t.getFullYear() && m === t.getMonth() && d === t.getDate();
 }
 
-// ---------- Render principal ----------
-async function initCalendar() {
+// --- Render del grid de días
+function initCalendar() {
   daysContainer.innerHTML = "";
 
   const firstDay = getFirstDayOfMonth(year, month);
@@ -157,52 +146,23 @@ async function initCalendar() {
     daysContainer.appendChild(cell);
   }
 
-  // Marcar días con eventos (consulta simple por día)
-  markDaysWithEvents(year, month);
-
-  // Cargar/suscribirse a eventos del día activo
+  // Cargar eventos del día activo (suscripción)
   updateEvents(activeDay);
 }
 
-// Marca con un punto los días que tienen eventos (realiza hasta 31 lecturas)
-async function markDaysWithEvents(y, m) {
-  const totalDays = getDaysInMonth(y, m);
-  const dayNodes = [...daysContainer.querySelectorAll(".day")].filter(
-    (el) => !el.classList.contains("prev-date") && !el.classList.contains("next-date")
-  );
-
-  // Limpia marcas previas
-  dayNodes.forEach((node) => node.classList.remove("event"));
-
-  // Lee día por día (suficiente para apps pequeñas)
-  for (let d = 1; d <= totalDays; d++) {
-    try {
-      const events = await window.$eventsAPI.listEventsByDay(y, m + 1, d);
-      if (events && events.length) {
-        const node = dayNodes[d - 1];
-        node?.classList.add("event");
-      }
-    } catch (e) {
-      console.warn("No se pudo marcar eventos para el día", d, e);
-    }
-  }
-}
-
-// ---------- Selección de día ----------
+// --- Cambiar día activo
 function setActiveDay(d) {
   activeDay = d;
-
   document.querySelectorAll(".day").forEach((el) => el.classList.remove("active"));
   const nodes = [...document.querySelectorAll(".day")].filter((el) => {
     if (el.classList.contains("prev-date") || el.classList.contains("next-date")) return false;
     return Number(el.textContent.trim()) === d;
   });
   if (nodes[0]) nodes[0].classList.add("active");
-
   updateEvents(d);
 }
 
-// ---------- Helpers UI ----------
+// ---------- Render listado ----------
 function renderMetaItem(label, value) {
   const row = document.createElement("div");
   row.className = "event-meta-row";
@@ -215,44 +175,14 @@ function renderMetaItem(label, value) {
   return row;
 }
 
-// ---------- Suscripción/render de eventos ----------
-function updateEvents(dayNumber) {
-  eventsContainer.innerHTML = "";
-
-  // Cancela suscripción previa
-  if (liveUnsub) { try { liveUnsub(); } catch {} liveUnsub = null; }
-
-  // Suscríbete en tiempo real al día activo
-  liveUnsub = window.$eventsAPI.watchDay(year, month + 1, dayNumber, (events) => {
-    // Normaliza y ordena
-    currentDayEvents = (events || []).map((ev) => ({
-      id: ev.id,
-      y: ev.y, m: ev.m, d: ev.d,
-      title: ev.title || "",
-      from: typeof ev.from === "number" ? ev.from : 0,
-      location: ev.location || "",
-      company:  ev.company  || "",
-      staff:    ev.staff    || "",
-      well:     ev.well     || "",
-      tool:     ev.tool     || "",
-      urgency:  normalizeUrgency(ev.urgency || ""),
-      status:   ev.status   || "",
-      notes:    ev.notes    || "",
-    })).sort((a, b) => a.from - b.from);
-
-    renderEventsList(currentDayEvents);
-
-    // Asegura que el día activo esté marcado como que tiene eventos o no
-    const activeEl = document.querySelector(".day.active");
-    if (activeEl) {
-      if (currentDayEvents.length) activeEl.classList.add("event");
-      else activeEl.classList.remove("event");
-    }
-  });
-}
-
 function renderEventsList(events) {
   eventsContainer.innerHTML = "";
+
+  // Marcar el día con clase .event si hay algo
+  const activeEl = document.querySelector(".day.active");
+  if (activeEl) {
+    activeEl.classList.toggle("event", events.length > 0);
+  }
 
   if (!events.length) {
     const noEv = document.createElement("div");
@@ -263,6 +193,8 @@ function renderEventsList(events) {
     eventsContainer.appendChild(noEv);
     return;
   }
+
+  events.sort((a, b) => a.from - b.from);
 
   events.forEach((ev) => {
     const card = document.createElement("div");
@@ -311,8 +243,7 @@ function renderEventsList(events) {
     details.appendChild(renderMetaItem("Herramienta", ev.tool));
     details.appendChild(renderMetaItem("Urgencia", ev.urgency));
     details.appendChild(renderMetaItem("Estado", ev.status));
-
-    if (ev.notes && String(ev.notes).trim().length) {
+    if (ev.notes && String(ev.notes).trim()) {
       const notesBlock = document.createElement("div");
       notesBlock.className = "event-notes-block";
       const notesLabel = document.createElement("strong");
@@ -331,7 +262,7 @@ function renderEventsList(events) {
       detailsBtn.textContent = isOpen ? "Detalles" : "Ocultar";
     });
 
-    // Botón Editar
+    // Editar
     const editBtn = document.createElement("button");
     editBtn.className = "event-details-btn";
     editBtn.textContent = "Editar";
@@ -340,7 +271,7 @@ function renderEventsList(events) {
       openEditEvent(ev);
     });
 
-    // Botón Eliminar (con confirmación)
+    // Eliminar
     const delBtn = document.createElement("button");
     delBtn.className = "event-delete-btn";
     delBtn.setAttribute("aria-label", "Eliminar evento");
@@ -363,33 +294,51 @@ function renderEventsList(events) {
   });
 }
 
-// ---------- Confirmación de borrado ----------
-function confirmAndDelete(ev) {
-  const fecha = `${pad2(activeDay)}/${pad2(month + 1)}/${year}`;
-  const hora  = minutesTo12h(ev.from);
-  const msg = `¿Eliminar el evento:\n\n“${ev.title}”\n${fecha} · ${hora}\n\nEsta acción no se puede deshacer.`;
-  if (confirm(msg)) {
-    deleteEvent(ev.id);
-  }
+// ---------- Firestore: cargar / suscribir ----------
+async function updateEvents(dayNumber) {
+  eventsContainer.innerHTML = "";
+
+  // Cancelar suscripción anterior
+  if (liveUnsub) { try { liveUnsub(); } catch {} liveUnsub = null; }
+
+  // Suscribirse al día activo
+  liveUnsub = window.$eventsAPI.watchDay(year, month + 1, dayNumber, (events) => {
+    // Normaliza urgencia de lo que venga (por si hay documentos viejos)
+    events.forEach(e => e.urgency = normalizeUrgency(e.urgency));
+    renderEventsList(events);
+  });
 }
 
-// ---------- Crear / Editar / Eliminar (Firestore) ----------
+// ---------- Crear / Editar / Borrar ----------
+function clearModalFields() {
+  if (addEventTitle) addEventTitle.value = "";
+  if (addEventFrom)  addEventFrom.value  = "";
+  if (addEventLocation) addEventLocation.value = "";
+  if (addEventCompany)  addEventCompany.value  = "";
+  if (addEventStaff)    addEventStaff.value    = "";
+  if (addEventWell)     addEventWell.value     = "";
+  if (addEventTool)     addEventTool.value     = "";
+  if (addEventUrgency)  addEventUrgency.value  = "";
+  if (addEventStatus)   addEventStatus.value   = "";
+  if (addEventNotes)    addEventNotes.value    = "";
+}
+
+function resetModalMode() {
+  isEditing = false;
+  editRef = null;
+  if (addEventHeaderH3) addEventHeaderH3.textContent = "Agregar evento";
+  if (addEventSubmit) addEventSubmit.textContent = "Guardar evento";
+}
+
 async function addOrUpdateEvent() {
   const title = (addEventTitle?.value || "").trim();
-  const fromStr  = (addEventFrom?.value || "").trim(); // "HH:MM" 24h
-
-  if (!title || !fromStr) {
-    alert("Completa Título y Hora de inicio");
-    return;
-  }
+  const fromStr  = (addEventFrom?.value || "").trim();
+  if (!title || !fromStr) { alert("Completa Título y Hora de inicio"); return; }
 
   const fromM = hmToMinutes(fromStr);
-  if (isNaN(fromM)) {
-    alert("Hora inválida (usa formato 24h HH:MM)");
-    return;
-  }
+  if (isNaN(fromM)) { alert("Hora inválida (usa formato 24h HH:MM)"); return; }
 
-  const payload = {
+  const newData = {
     y: year, m: month + 1, d: activeDay,
     title,
     from: fromM,
@@ -403,49 +352,27 @@ async function addOrUpdateEvent() {
     notes   : (addEventNotes?.value    || "").trim(),
   };
 
-  // Validar duplicado (mismo título + misma hora en el día activo)
-  const duplicate = currentDayEvents.some((ev) => {
-    if (isEditing && editRef?.id === ev.id) return false; // ignora el mismo
-    return ev.title === payload.title && ev.from === payload.from;
-  });
-  if (duplicate) {
-    alert("Ya existe un evento con ese Título y esa Hora de inicio.");
-    return;
-  }
-
   try {
     if (!isEditing) {
-      await window.$eventsAPI.createEvent(payload);
+      await window.$eventsAPI.createEvent(newData);
     } else {
-      await window.$eventsAPI.updateEvent(editRef.id, payload);
+      await window.$eventsAPI.updateEvent(editRef.id, newData);
     }
     closeAddEventModal();
     clearModalFields();
     resetModalMode();
   } catch (e) {
-    console.error("Error al guardar evento:", e);
-    alert("Ocurrió un error al guardar el evento.");
+    console.error(e);
+    alert("No se pudo guardar el evento.");
   }
 }
 
-async function deleteEvent(id) {
-  try {
-    await window.$eventsAPI.removeEvent(id);
-  } catch (e) {
-    console.error("Error al eliminar evento:", e);
-    alert("No se pudo eliminar el evento.");
-  }
-}
-
-// ---------- Modo edición ----------
 function openEditEvent(ev) {
   isEditing = true;
-  editRef = { id: ev.id };
-
+  editRef = { id: ev.id, originalTitle: ev.title, originalFrom: ev.from };
   if (addEventHeaderH3) addEventHeaderH3.textContent = "Editar evento";
   if (addEventSubmit) addEventSubmit.textContent = "Guardar cambios";
 
-  // Prellenar campos
   if (addEventTitle) addEventTitle.value = ev.title || "";
   if (addEventFrom)  addEventFrom.value  = toHHMM(ev.from || 0);
 
@@ -461,60 +388,20 @@ function openEditEvent(ev) {
   openAddEventModal();
 }
 
-function resetModalMode() {
-  isEditing = false;
-  editRef = null;
-  if (addEventHeaderH3) addEventHeaderH3.textContent = "Agregar evento";
-  if (addEventSubmit) addEventSubmit.textContent = "Guardar evento";
+async function deleteEventById(id) {
+  try {
+    await window.$eventsAPI.removeEvent(id);
+  } catch (e) {
+    console.error(e);
+    alert("No se pudo eliminar el evento.");
+  }
 }
 
-function clearModalFields() {
-  if (addEventTitle) addEventTitle.value = "";
-  if (addEventFrom)  addEventFrom.value  = "";
-  if (addEventLocation) addEventLocation.value = "";
-  if (addEventCompany)  addEventCompany.value  = "";
-  if (addEventStaff)    addEventStaff.value    = "";
-  if (addEventWell)     addEventWell.value     = "";
-  if (addEventTool)     addEventTool.value     = "";
-  if (addEventUrgency)  addEventUrgency.value  = "";
-  if (addEventStatus)   addEventStatus.value   = "";
-  if (addEventNotes)    addEventNotes.value    = "";
-}
-
-// ---------- Navegación ----------
-function prevMonth() {
-  month--;
-  if (month < 0) { month = 11; year--; }
-  const dim = getDaysInMonth(year, month);
-  if (activeDay > dim) activeDay = dim;
-  initCalendar();
-}
-function nextMonth() {
-  month++;
-  if (month > 11) { month = 0; year++; }
-  const dim = getDaysInMonth(year, month);
-  if (activeDay > dim) activeDay = dim;
-  initCalendar();
-}
-function gotoDate() {
-  const raw = (dateInput?.value || "").trim();
-  const parts = raw.split("/");
-  if (parts.length !== 2) { alert("Fecha inválida. Usa mm/yyyy"); return; }
-  const mm = parseInt(parts[0], 10);
-  const yyyy = parseInt(parts[1], 10);
-  if (!(mm >= 1 && mm <= 12) || String(yyyy).length !== 4) { alert("Fecha inválida. Usa mm/yyyy"); return; }
-  month = mm - 1;
-  year = yyyy;
-  const dim = getDaysInMonth(year, month);
-  if (activeDay > dim) activeDay = dim;
-  initCalendar();
-}
-function goToday() {
-  const t = new Date();
-  month = t.getMonth();
-  year = t.getFullYear();
-  activeDay = t.getDate();
-  initCalendar();
+function confirmAndDelete(ev) {
+  const fecha = `${pad2(activeDay)}/${pad2(month + 1)}/${year}`;
+  const hora  = minutesTo12h(ev.from);
+  const msg = `¿Eliminar el evento:\n\n“${ev.title}”\n${fecha} · ${hora}\n\nEsta acción no se puede deshacer.`;
+  if (confirm(msg)) deleteEventById(ev.id);
 }
 
 // ---------- Modal + accesibilidad ----------
@@ -528,12 +415,8 @@ function openAddEventModal() {
 function closeAddEventModal() {
   addEventWrapper?.classList.remove("active");
   if (isEditing) resetModalMode();
-
-  if (modalPreviousFocus && typeof modalPreviousFocus.focus === "function") {
-    modalPreviousFocus.focus();
-  } else {
-    calendarBodyEl?.focus?.();
-  }
+  if (modalPreviousFocus && typeof modalPreviousFocus.focus === "function") modalPreviousFocus.focus();
+  else calendarBodyEl?.focus?.();
 }
 function trapFocus(modalEl) {
   if (!modalEl) return;
@@ -572,6 +455,46 @@ function makeKeyboardClickable(el, ariaLabel) {
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); }
   });
+}
+
+// ---------- Navegación calendario ----------
+function prevMonth() {
+  month--;
+  if (month < 0) { month = 11; year--; }
+  const dim = getDaysInMonth(year, month);
+  if (activeDay > dim) activeDay = dim;
+  if (liveUnsub) { try{ liveUnsub(); }catch{} liveUnsub = null; }
+  initCalendar();
+}
+function nextMonth() {
+  month++;
+  if (month > 11) { month = 0; year++; }
+  const dim = getDaysInMonth(year, month);
+  if (activeDay > dim) activeDay = dim;
+  if (liveUnsub) { try{ liveUnsub(); }catch{} liveUnsub = null; }
+  initCalendar();
+}
+function gotoDate() {
+  const raw = (dateInput?.value || "").trim();
+  const parts = raw.split("/");
+  if (parts.length !== 2) { alert("Fecha inválida. Usa mm/yyyy"); return; }
+  const mm = parseInt(parts[0], 10);
+  const yyyy = parseInt(parts[1], 10);
+  if (!(mm >= 1 && mm <= 12) || String(yyyy).length !== 4) { alert("Fecha inválida. Usa mm/yyyy"); return; }
+  month = mm - 1;
+  year = yyyy;
+  const dim = getDaysInMonth(year, month);
+  if (activeDay > dim) activeDay = dim;
+  if (liveUnsub) { try{ liveUnsub(); }catch{} liveUnsub = null; }
+  initCalendar();
+}
+function goToday() {
+  const t = new Date();
+  month = t.getMonth();
+  year = t.getFullYear();
+  activeDay = t.getDate();
+  if (liveUnsub) { try{ liveUnsub(); }catch{} liveUnsub = null; }
+  initCalendar();
 }
 
 // ---------- Listeners ----------
