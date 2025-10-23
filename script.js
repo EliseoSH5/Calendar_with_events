@@ -73,7 +73,7 @@ function toHHMM(mins) {
 function normalizeUrgency(u) {
   if (!u) return "";
   const s = String(u).trim().toLowerCase();
-  if (["Alta","alta","red"].includes(s)) return "Alta";
+  if (["Alta","roja","red"].includes(s)) return "Alta";
   if (["Media","amarilla","yellow"].includes(s)) return "Media";
   if (["Baja","verde","low"].includes(s)) return "Baja";
   return s;
