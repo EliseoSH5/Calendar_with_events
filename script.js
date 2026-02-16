@@ -51,6 +51,8 @@ let editRef = null; // { id, originalTitle, originalFrom }
 
 // Suscripción Firestore del día activo
 let liveUnsub = null;
+let monthUnsub = null;
+let monthDaysWithEvents = new Set();
 
 // ---------- Utilidades ----------
 function hmToMinutes(hhmm) {
@@ -114,8 +116,43 @@ function isToday(y, m, d) {
 }
 
 // --- Render del grid de días
+function applyMonthDots() {
+  // Marca con .event todos los días del mes que tengan al menos un evento
+  document.querySelectorAll(".day").forEach((cell) => {
+    if (cell.classList.contains("prev-date") || cell.classList.contains("next-date")) return;
+
+    const numEl = cell.querySelector("span");
+    const n = Number(numEl ? numEl.textContent : cell.textContent.trim());
+    if (!Number.isFinite(n)) return;
+
+    cell.classList.toggle("event", monthDaysWithEvents.has(n));
+  });
+}
+
+function watchCurrentMonthDots() {
+  // Cancela suscripción previa
+  if (monthUnsub) { try { monthUnsub(); } catch { } monthUnsub = null; }
+
+  // Limpia y aplica (por si el grid se acaba de regenerar)
+  monthDaysWithEvents = new Set();
+  applyMonthDots();
+
+  // Suscribe al mes visible
+  monthUnsub = window.$eventsAPI.watchMonth(year, month + 1, (events) => {
+    const s = new Set();
+    for (const e of events) {
+      const d = Number(e.d);
+      if (Number.isFinite(d)) s.add(d);
+    }
+    monthDaysWithEvents = s;
+    applyMonthDots();
+  });
+}
+
+
 function initCalendar() {
   daysContainer.innerHTML = "";
+  if (monthUnsub) { try { monthUnsub(); } catch { } monthUnsub = null; }
 
   const firstDay = getFirstDayOfMonth(year, month);
   const totalDays = getDaysInMonth(year, month);
@@ -173,7 +210,9 @@ function initCalendar() {
   }
 
   // Cargar eventos del día activo (suscripción)
+  watchCurrentMonthDots();
   updateEvents(activeDay);
+
 }
 
 // --- Cambiar día activo

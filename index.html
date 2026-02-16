@@ -207,6 +207,19 @@
         cb(data);
       });
     }
+    function watchMonth(y, m, cb) {
+      const q = query(
+        collection(db, "events"),
+        where("y", "==", y),
+        where("m", "==", m)
+      );
+
+      return onSnapshot(q, (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        cb(data);
+      });
+    }
+
 
     async function createEvent(ev) {
       const id = (crypto?.randomUUID && crypto.randomUUID()) || String(Date.now());
@@ -231,7 +244,7 @@
     }
 
     // Exponer para script.js
-    window.$eventsAPI = { listEventsByDay, watchDay, createEvent, updateEvent, removeEvent };
+    window.$eventsAPI = { listEventsByDay, watchDay, watchMonth, createEvent, updateEvent, removeEvent };
   </script>
 
   <!-- Tu JS principal (adaptado a Firestore) -->
